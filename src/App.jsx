@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronLeft, Download, ExternalLink, RotateCcw, Copy, Check, TrendingUp, AlertCircle } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // =============================================================================
 // CUESTIONARIO VANGUARD - 11 PREGUNTAS OFICIALES
@@ -442,54 +444,318 @@ export default function InvestorProfileTest() {
     setPhase('welcome');
   };
 
-  const generateExport = () => {
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 20;
     const date = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
-    let md = `# Test de Perfil de Inversor — Resultados\n\n`;
-    md += `**Fecha:** ${date}\n`;
-    md += `**Metodología:** Cuestionario de Vanguard adaptado (11 preguntas)\n`;
-    md += `**Puntuación total:** ${totalScore} puntos\n\n`;
-    md += `---\n\n## Perfil resultante: ${profile.name}\n\n`;
-    md += `${profile.description}\n\n`;
-    md += `**Asset Allocation recomendada:**\n`;
-    md += `- Renta variable: ${profile.allocation.stocks}%\n`;
-    md += `- Renta fija: ${profile.allocation.bonds}%\n`;
-    md += `- Liquidez / Money market: ${profile.allocation.cash}%\n\n`;
-    md += `**Rentabilidad esperada anualizada:** ${profile.expectedReturn}\n`;
-    md += `**Drawdown máximo esperado:** ${profile.maxDrawdown}\n\n`;
-    md += `---\n\n## Cartera implementación con ETFs UCITS\n\n`;
-    md += `TER ponderado de la cartera: **${weightedTER.toFixed(3)}%**\n\n`;
-    md += `| Ticker | ISIN | Nombre | Categoría | Peso | TER | AUM (M€) |\n`;
-    md += `|--------|------|--------|-----------|------|-----|----------|\n`;
-    portfolio.forEach(e => {
-      md += `| ${e.ticker} | ${e.isin} | ${e.name} | ${e.category} | ${e.weight}% | ${e.ter.toFixed(2)}% | ${e.aum.toLocaleString('es-ES')} |\n`;
+
+    // ====== PORTADA / CABECERA ======
+    // Línea de color del perfil arriba
+    const hex = profile.color.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    doc.setFillColor(r, g, b);
+    doc.rect(0, 0, pageWidth, 4, 'F');
+
+    // Etiqueta superior
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(120, 113, 108);
+    doc.text('TEST DE PERFIL DE INVERSOR', marginX, 20);
+
+    // Título principal
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(26);
+    doc.setTextColor(28, 25, 23);
+    doc.text('Resultados de tu', marginX, 32);
+    doc.setFont('helvetica', 'bolditalic');
+    doc.text('perfil inversor', marginX, 42);
+
+    // Línea divisoria
+    doc.setDrawColor(231, 229, 228);
+    doc.setLineWidth(0.3);
+    doc.line(marginX, 48, pageWidth - marginX, 48);
+
+    // Metadatos
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(87, 83, 78);
+    doc.text(`Fecha: ${date}`, marginX, 55);
+    doc.text(`Metodología: Cuestionario de Vanguard (11 preguntas)`, marginX, 60);
+    doc.text(`Puntuación total: ${totalScore} puntos`, marginX, 65);
+
+    // ====== PERFIL RESULTANTE ======
+    let y = 78;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(r, g, b);
+    doc.text('TU PERFIL RESULTANTE', marginX, y);
+
+    y += 8;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(20);
+    doc.setTextColor(28, 25, 23);
+    doc.text(profile.name, marginX, y);
+
+    y += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(68, 64, 60);
+    const descLines = doc.splitTextToSize(profile.description, pageWidth - marginX * 2);
+    doc.text(descLines, marginX, y);
+    y += descLines.length * 5 + 5;
+
+    // ====== ASSET ALLOCATION ======
+    doc.setFillColor(250, 250, 249);
+    doc.rect(marginX, y, pageWidth - marginX * 2, 45, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(28, 25, 23);
+    doc.text('Asignación de activos recomendada', marginX + 5, y + 8);
+
+    // Barras horizontales del allocation
+    const barY = y + 14;
+    const barW = pageWidth - marginX * 2 - 10;
+    const allocs = [
+      { label: 'Renta variable', value: profile.allocation.stocks, color: [r, g, b] },
+      { label: 'Renta fija', value: profile.allocation.bonds, color: [71, 85, 105] },
+      { label: 'Liquidez', value: profile.allocation.cash, color: [203, 213, 225] },
+    ].filter(a => a.value > 0);
+
+    let xCursor = marginX + 5;
+    allocs.forEach(a => {
+      const w = (a.value / 100) * barW;
+      doc.setFillColor(a.color[0], a.color[1], a.color[2]);
+      doc.rect(xCursor, barY, w, 6, 'F');
+      xCursor += w;
     });
-    md += `\n---\n\n## Respuestas al cuestionario\n\n`;
+
+    // Leyenda del allocation
+    let legY = barY + 12;
+    doc.setFontSize(9);
+    allocs.forEach(a => {
+      doc.setFillColor(a.color[0], a.color[1], a.color[2]);
+      doc.rect(marginX + 5, legY - 3, 3, 3, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(68, 64, 60);
+      doc.text(`${a.label}:`, marginX + 11, legY);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(28, 25, 23);
+      doc.text(`${a.value}%`, marginX + 45, legY);
+      legY += 5;
+    });
+
+    // Métricas a la derecha
+    const metricsX = pageWidth / 2 + 10;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text('Rentabilidad esperada anualizada:', metricsX, barY + 12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(28, 25, 23);
+    doc.text(profile.expectedReturn, metricsX, barY + 17);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 113, 108);
+    doc.text('Drawdown máximo esperado:', metricsX, barY + 24);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(28, 25, 23);
+    doc.text(profile.maxDrawdown, metricsX, barY + 29);
+
+    y += 52;
+
+    // ====== TABLA DE ETFs ======
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(28, 25, 23);
+    doc.text('Cartera de implementación con ETFs UCITS', marginX, y);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text(`TER ponderado: ${weightedTER.toFixed(3)}%`, pageWidth - marginX, y, { align: 'right' });
+
+    y += 4;
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Ticker', 'ISIN', 'Nombre', 'Categoría', 'Peso', 'TER', 'AUM (M€)']],
+      body: portfolio.map(e => [
+        e.ticker,
+        e.isin,
+        e.name,
+        e.category,
+        `${e.weight}%`,
+        `${e.ter.toFixed(2)}%`,
+        e.aum.toLocaleString('es-ES'),
+      ]),
+      theme: 'plain',
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 2.5, textColor: [28, 25, 23] },
+      headStyles: { fillColor: [28, 25, 23], textColor: [250, 250, 249], fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: [250, 250, 249] },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 16 },
+        1: { fontSize: 7, cellWidth: 26, textColor: [120, 113, 108] },
+        2: { cellWidth: 50 },
+        3: { fontSize: 7, cellWidth: 30, textColor: [87, 83, 78] },
+        4: { halign: 'right', fontStyle: 'bold', cellWidth: 14 },
+        5: { halign: 'right', cellWidth: 14 },
+        6: { halign: 'right', cellWidth: 22 },
+      },
+      margin: { left: marginX, right: marginX },
+    });
+
+    // ====== PÁGINA 2: RESPUESTAS ======
+    doc.addPage();
+
+    // Línea superior
+    doc.setFillColor(r, g, b);
+    doc.rect(0, 0, pageWidth, 4, 'F');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(120, 113, 108);
+    doc.text('TUS RESPUESTAS AL CUESTIONARIO', marginX, 20);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(28, 25, 23);
+    doc.text('Detalle de respuestas', marginX, 32);
+
+    doc.setDrawColor(231, 229, 228);
+    doc.line(marginX, 38, pageWidth - marginX, 38);
+
+    let yResp = 48;
     QUESTIONS.forEach((q, i) => {
       const a = answers[q.id];
-      if (a !== undefined) {
-        md += `**${i + 1}. ${q.title}**\n`;
-        md += `→ ${q.options[a.optionIdx].label} *(${a.points} pts)*\n\n`;
-      }
-    });
-    md += `---\n\n## Disclaimers\n\n`;
-    md += `- Esta herramienta NO constituye asesoramiento financiero personalizado bajo MiFID II.\n`;
-    md += `- El cuestionario es una adaptación del Investor Questionnaire público de Vanguard Group.\n`;
-    md += `- Los ETFs propuestos son UCITS domiciliados en Irlanda/Luxemburgo, seleccionados por TER y AUM.\n`;
-    md += `- Datos de TER y AUM verificados en justETF.com (abril 2026). Sujetos a cambios.\n`;
-    md += `- Rentabilidades pasadas no garantizan rentabilidades futuras.\n`;
-    md += `- Considera tu situación fiscal personal (IRPF, Modelos 720/721 si aplica) antes de invertir.\n`;
-    return md;
-  };
+      if (a === undefined) return;
 
-  const handleDownload = () => {
-    const md = generateExport();
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `perfil-inversor-${profile.id}-${Date.now()}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+      // Nueva página si no cabe
+      if (yResp > pageHeight - 40) {
+        doc.addPage();
+        doc.setFillColor(r, g, b);
+        doc.rect(0, 0, pageWidth, 4, 'F');
+        yResp = 25;
+      }
+
+      // Bloque temático
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(180, 83, 9);
+      doc.text(q.block.toUpperCase(), marginX, yResp);
+      yResp += 4;
+
+      // Pregunta
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(28, 25, 23);
+      const qLines = doc.splitTextToSize(`${i + 1}. ${q.title}`, pageWidth - marginX * 2);
+      doc.text(qLines, marginX, yResp);
+      yResp += qLines.length * 4.5 + 2;
+
+      // Respuesta
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(87, 83, 78);
+      const aLines = doc.splitTextToSize(`→ ${q.options[a.optionIdx].label}`, pageWidth - marginX * 2 - 10);
+      doc.text(aLines, marginX + 4, yResp);
+      yResp += aLines.length * 4.5;
+
+      // Puntos
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(120, 113, 108);
+      doc.text(`${a.points} pts`, pageWidth - marginX, yResp - aLines.length * 4.5, { align: 'right' });
+
+      yResp += 6;
+    });
+
+    // ====== PÁGINA FINAL: DISCLAIMERS ======
+    doc.addPage();
+
+    doc.setFillColor(r, g, b);
+    doc.rect(0, 0, pageWidth, 4, 'F');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(120, 113, 108);
+    doc.text('INFORMACIÓN LEGAL Y METODOLÓGICA', marginX, 20);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(28, 25, 23);
+    doc.text('Disclaimers', marginX, 32);
+
+    doc.setDrawColor(231, 229, 228);
+    doc.line(marginX, 38, pageWidth - marginX, 38);
+
+    const disclaimers = [
+      {
+        title: 'No constituye asesoramiento financiero',
+        body: 'Esta herramienta es educativa. No constituye asesoramiento financiero personalizado bajo MiFID II. La selección de ETFs prioriza criterios objetivos (TER, AUM, replicación física, domicilio fiscal) pero no considera tu situación fiscal completa, objetivos vitales o restricciones específicas.'
+      },
+      {
+        title: 'Origen del cuestionario',
+        body: 'El cuestionario es una adaptación al castellano del Investor Questionnaire público de Vanguard Group. Los 9 perfiles resultantes y sus asignaciones de activos siguen la metodología original de Vanguard.'
+      },
+      {
+        title: 'Selección de ETFs',
+        body: 'Los ETFs propuestos son UCITS domiciliados en Irlanda o Luxemburgo, en formato acumulación, seleccionados por su bajo TER y elevado patrimonio gestionado (AUM). Los ETFs UCITS irlandeses ofrecen eficiencia fiscal vía retención del 15% en origen sobre dividendos USA. Datos verificados en justETF.com (abril 2026). TER y AUM sujetos a cambios.'
+      },
+      {
+        title: 'Consideraciones previas a invertir',
+        body: 'Antes de invertir, consulta el KID/PRIIPs de cada producto. Revisa tu situación fiscal personal (IRPF, Modelos 720/721 si aplica). Verifica la disponibilidad del ETF en tu broker (Folionet, IBKR, Trade Republic, eToro, Revolut u otros).'
+      },
+      {
+        title: 'Rentabilidades',
+        body: 'Las rentabilidades esperadas son estimaciones basadas en retornos históricos de carteras similares. Rentabilidades pasadas no garantizan rentabilidades futuras. Los drawdowns indicados son aproximaciones a las caídas máximas históricas observadas en perfiles equivalentes.'
+      },
+    ];
+
+    let yDisc = 48;
+    disclaimers.forEach(d => {
+      if (yDisc > pageHeight - 40) {
+        doc.addPage();
+        doc.setFillColor(r, g, b);
+        doc.rect(0, 0, pageWidth, 4, 'F');
+        yDisc = 25;
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(28, 25, 23);
+      doc.text(d.title, marginX, yDisc);
+      yDisc += 5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(68, 64, 60);
+      const bodyLines = doc.splitTextToSize(d.body, pageWidth - marginX * 2);
+      doc.text(bodyLines, marginX, yDisc);
+      yDisc += bodyLines.length * 4.5 + 7;
+    });
+
+    // ====== FOOTER en todas las páginas ======
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(168, 162, 158);
+      doc.text(
+        `Test de Perfil de Inversor · Generado el ${date} · Página ${i} de ${totalPages}`,
+        pageWidth / 2,
+        pageHeight - 8,
+        { align: 'center' }
+      );
+    }
+
+    // Guardar
+    const filename = `perfil-inversor-${profile.id}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(filename);
   };
 
   const handleCopyPortfolio = () => {
@@ -724,11 +990,11 @@ export default function InvestorProfileTest() {
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <button
-                  onClick={handleDownload}
+                  onClick={handleDownloadPDF}
                   className="border border-stone-300 px-6 py-3 text-sm hover:bg-stone-100 transition-colors flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  Descargar resumen
+                  Descargar PDF
                 </button>
                 <button
                   onClick={handleRestart}
