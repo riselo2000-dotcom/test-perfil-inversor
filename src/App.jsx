@@ -661,7 +661,7 @@ export default function InvestorProfileTest() {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(87, 83, 78);
-      const aLines = doc.splitTextToSize(`→ ${q.options[a.optionIdx].label}`, pageWidth - marginX * 2 - 10);
+      const aLines = doc.splitTextToSize(`> ${q.options[a.optionIdx].label}`, pageWidth - marginX * 2 - 10);
       doc.text(aLines, marginX + 4, yResp);
       yResp += aLines.length * 4.5;
 
